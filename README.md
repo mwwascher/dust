@@ -1,4 +1,5 @@
-DustMCMC2.jl create two functions: DustMCMC_cal() and DustMCMC_est(). DustMCMC_cal() is used to estimate beta given observed dust from a known number n of infectious individuals shedding. DustMCMC_est() is used to estimated an unknown number of infectious individuals n given 
+DustMCMC2.jl contains the code used to run the MCMC algorithm described in "A mechanistic modeling and estimation framework for
+environmental pathogen surveillance". The algorithm is divided into two functions: DustMCMC_cal() and DustMCMC_est(). DustMCMC_cal() is used to estimate beta given observed dust from a known number n of infectious individuals shedding. DustMCMC_est() is used to estimated an unknown number of infectious individuals n given 
 
 DustMCMC2_cal(obs, n, nreps, filename) has the following arguments
 obs - observed copies of viral RNA in 50mg of dust
