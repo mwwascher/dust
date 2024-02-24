@@ -1,0 +1,379 @@
+using CSV
+using Distributions
+using DataFrames
+using Plots
+
+#set wd with cd("C:\\Users\\matth\\OneDrive\\Documents\\JuliaWD")
+#dust_test.csv has one obs with 300 copies
+
+function DustMCMC2_cal(obs, n, nreps, filename)
+    #data = CSV.read(filename, DataFrame)
+
+    #### Known n
+    #nreps = 100
+    #mc_steps = 100
+    beta_samp = Vector{Float64}(undef, nreps)
+    accept_count = 0
+
+    #obs = 4000#data[:,"copies"][1]
+    log_sum = 0
+    for l in 1:obs
+        log_sum = log_sum + log(l)
+    end
+    print(obs)
+
+    m = 50
+    xi = log(2) / 7
+    mc_int = 0
+    t_max = 10
+
+    mu_p = 4.2
+    sigma_p = 0.5
+    mu_r = 7.3
+    sigma_r = 0.6
+    delta = Vector{Float64}(undef, n)
+
+    beta = 10
+    p_mean = 1*m
+
+    function lam_f(x, delta, nu, t_0, tau_r)
+        y = (exp(log(delta + 1) / (nu - t_0) * (x - t_0)) - 1) * sum((x .>= t_0) .& (x .< nu)) +
+            (exp(log(delta + 1) / (t_0 + tau_r - nu) * (t_0 + tau_r - x)) - 1) * sum((x .>= nu) .& (x .<= t_0 + tau_r))
+        return y
+    end
+
+    for i in 1:nreps
+
+        
+
+
+        beta_new = 0
+        while beta_new <= 0
+            beta_new = beta + rand(Normal(0, 1))
+        end
+        
+
+        delta_new = rand(Exponential(beta_new), n)
+        #delta = rand(Exponential(beta), n)
+        tau_p = rand(Normal(mu_p, sigma_p), n)
+        tau_r = rand(Normal(mu_r, sigma_r), n)
+        t_0 = -1 .- rand(n) .* (tau_r + tau_p)
+
+        ###old delta
+        mu_i = Vector{Float64}(undef, n)
+        p_i = Vector{Float64}(undef, n)
+
+        for h in 1:n
+            net = range(0, stop = t_max, step = 0.01)
+            y = similar(net)
+            int_y = 0.0
+            for k in 1:length(net)
+                y[k] = lam_f(net[k], delta[h], t_0[h] + tau_p[h], t_0[h], tau_r[h])
+                int_y += y[k] * 0.01
+            end
+
+            mu_i[h] = int_y
+
+            z = similar(net)
+            int_z = 0.0
+
+            if mu_i[h] == 0
+                p_i[h] = 0.0
+            else
+                for k in 1:length(net)
+                    z[k] = exp(-xi * (t_max - net[k])) * lam_f(net[k], delta[h], t_0[h] + tau_p[h], t_0[h], tau_r[h]) / mu_i[h]
+                    int_z += z[k] * 0.01
+                end
+
+                p_i[h] = int_z
+            end
+        end
+
+        p_mean = m*sum(mu_i .* p_i)
+        #print(p_mean)
+        if isnan(p_mean)
+            p_mean = 0
+        end
+
+        ###new delta
+        mu_i = Vector{Float64}(undef, n)
+        p_i = Vector{Float64}(undef, n)
+
+        for h in 1:n
+            net = range(0, stop = t_max, step = 0.01)
+            y = similar(net)
+            int_y = 0.0
+            for k in 1:length(net)
+                y[k] = lam_f(net[k], delta_new[h], t_0[h] + tau_p[h], t_0[h], tau_r[h])
+                int_y += y[k] * 0.01
+            end
+
+            mu_i[h] = int_y
+
+            z = similar(net)
+            int_z = 0.0
+
+            if mu_i[h] == 0
+                p_i[h] = 0.0
+            else
+                for k in 1:length(net)
+                    z[k] = exp(-xi * (t_max - net[k])) * lam_f(net[k], delta_new[h], t_0[h] + tau_p[h], t_0[h], tau_r[h]) / mu_i[h]
+                    int_z += z[k] * 0.01
+                end
+
+                p_i[h] = int_z
+            end
+        end
+
+        p_mean_new = m*sum(mu_i .* p_i)
+        #print(p_mean)
+        if isnan(p_mean_new)
+            p_mean_new = 0
+        end
+        #println(p_mean)
+
+        
+        
+        #println(beta_new)
+        #beta_all_samp[i] = beta_new
+        #println(mc_int_new)
+        #mc_int_samp[i] = mc_int_new
+        if isnan(p_mean_new)
+            p_mean_new = 0
+        end
+
+        if p_mean_new <= 0
+            #println("help")
+            p_mean_new = 0.1
+            accept_ratio = 0
+        elseif p_mean <= 0
+            p_mean = 0.1
+            accept_ratio = 1
+        else
+            Pois_old = Poisson(p_mean)
+            Pois_new = Poisson(p_mean_new)
+
+            log_ar = (obs*log(p_mean_new) - p_mean_new) - (obs*log(p_mean) - p_mean) 
+
+            accept_ratio = min(1, exp(log_ar))
+            #accept_ratio = min(1,exp(log_accept_ratio))
+        end
+        #println("step")
+        #println(beta_new)
+        #println(beta)
+        #println(mc_int_new)
+        #println(mc_int)
+        #println(accept_ratio)
+
+        if isnan(accept_ratio)
+            accept_ratio = 0
+        end
+
+        accept = rand(Bernoulli(accept_ratio))
+        if accept == 1
+            beta = beta_new
+            delta_new = delta
+            accept_count += 1
+            #println("accept")
+        else
+            #println("reject")
+        end
+
+        #println("beta")
+        #println(beta)
+        beta_samp[i] = beta
+    end
+
+    println(accept_count / nreps)
+
+    beta_out = DataFrame([beta_samp], [:col1])
+    CSV.write(filename, beta_out)
+end
+
+###########################################################################
+function DustMCMC2_est(filename, obs, nmax, nreps, filename_out)
+    #data = CSV.read(filename, DataFrame)
+    #### Known n
+    #nreps = 100
+    #mc_steps = 100
+    data = CSV.read(filename, DataFrame)
+    beta_post = data[:,1]
+    accept_count = 0
+    n_samp = Vector{Float64}(undef, nreps)
+
+    n = 50
+    #obs = 3044
+    print(obs)
+
+    m = 50
+    xi = log(2) / 7
+    mc_int = 0
+    t_max = 10
+
+    mu_p = 4.2
+    sigma_p = 0.5
+    mu_r = 7.3
+    sigma_r = 0.6
+    delta = Vector{Float64}(undef, n)
+
+    beta = 20#sample(beta_post,1)[1]
+    n = Int16(round(nmax*rand(Uniform(0, 1))))
+    p_mean = 1*m
+
+    function lam_f(x, delta, nu, t_0, tau_r)
+        y = (exp(log(delta + 1) / (nu - t_0) * (x - t_0)) - 1) * sum((x .>= t_0) .& (x .< nu)) +
+            (exp(log(delta + 1) / (t_0 + tau_r - nu) * (t_0 + tau_r - x)) - 1) * sum((x .>= nu) .& (x .<= t_0 + tau_r))
+        return y
+    end
+
+    for i in 1:nreps
+
+        
+
+        n_new = Int16(round(nmax*rand(Uniform(0, 1))))
+        beta = 20#sample(beta_post,1)[1]
+        
+
+        delta = rand(Exponential(beta), n)
+        tau_p = rand(Normal(mu_p, sigma_p), n)
+        tau_r = rand(Normal(mu_r, sigma_r), n)
+        t_0 = -1 .- rand(n) .* (tau_r + tau_p)
+
+        delta_new = rand(Exponential(beta), n_new)
+        tau_p_new = rand(Normal(mu_p, sigma_p), n_new)
+        tau_r_new = rand(Normal(mu_r, sigma_r), n_new)
+        t_0_new = -1 .- rand(n_new) .* (tau_r_new + tau_p_new)
+
+        ###old delta
+        mu_i = Vector{Float64}(undef, n)
+        p_i = Vector{Float64}(undef, n)
+
+        for h in 1:n
+            net = range(0, stop = t_max, step = 0.01)
+            y = similar(net)
+            int_y = 0.0
+            for k in 1:length(net)
+                y[k] = lam_f(net[k], delta[h], t_0[h] + tau_p[h], t_0[h], tau_r[h])
+                int_y += y[k] * 0.01
+            end
+
+            mu_i[h] = int_y
+
+            z = similar(net)
+            int_z = 0.0
+
+            if mu_i[h] == 0
+                p_i[h] = 0.0
+            else
+                for k in 1:length(net)
+                    z[k] = exp(-xi * (t_max - net[k])) * lam_f(net[k], delta[h], t_0[h] + tau_p[h], t_0[h], tau_r[h]) / mu_i[h]
+                    int_z += z[k] * 0.01
+                end
+
+                p_i[h] = int_z
+            end
+        end
+
+        p_mean = m*sum(mu_i .* p_i)
+        if isnan(p_mean)
+            #println("hilfen")
+            #println(p_mean)
+            p_mean = 0
+        end
+
+        ###new delta
+        mu_i = Vector{Float64}(undef, n_new)
+        p_i = Vector{Float64}(undef, n_new)
+
+        for h in 1:n_new
+            net = range(0, stop = t_max, step = 0.01)
+            y = similar(net)
+            int_y = 0.0
+            for k in 1:length(net)
+                y[k] = lam_f(net[k], delta_new[h], t_0_new[h] + tau_p_new[h], t_0_new[h], tau_r_new[h])
+                int_y += y[k] * 0.01
+            end
+
+            mu_i[h] = int_y
+
+            z = similar(net)
+            int_z = 0.0
+
+            if mu_i[h] == 0
+                p_i[h] = 0.0
+            else
+                for k in 1:length(net)
+                    z[k] = exp(-xi * (t_max - net[k])) * lam_f(net[k], delta_new[h], t_0_new[h] + tau_p_new[h], t_0_new[h], tau_r_new[h]) / mu_i[h]
+                    int_z += z[k] * 0.01
+                end
+
+                p_i[h] = int_z
+            end
+        end
+
+        p_mean_new = m*sum(mu_i .* p_i)
+        #print(p_mean)
+        if isnan(p_mean_new)
+            p_mean_new = 0
+        end
+        #println(p_mean)
+
+        
+        
+        #println(beta_new)
+        #beta_all_samp[i] = beta_new
+        #println(mc_int_new)
+        #mc_int_samp[i] = mc_int_new
+        if isnan(p_mean_new)
+            p_mean_new = 0
+        end
+
+        if p_mean_new <= 0
+            #println("help")
+            #println(mu_i)
+            #println(p_i)
+
+            p_mean_new = 0.1
+            accept_ratio = 0
+        elseif p_mean <= 0
+            p_mean = 0.1
+            accept_ratio = 1
+        else
+            Pois_old = Poisson(p_mean)
+            Pois_new = Poisson(p_mean_new)
+            log_ar = (obs*log(p_mean_new) - p_mean_new) - (obs*log(p_mean) - p_mean) 
+
+            accept_ratio = min(1, exp(log_ar))
+            #accept_ratio = min(1, pdf(Pois_new, obs)/pdf(Pois_old, obs))
+            #accept_ratio = min(1,exp(log_accept_ratio))
+        end
+        #println("step")
+        #println(beta_new)
+        #println(beta)
+        #println(mc_int_new)
+        #println(mc_int)
+        #println(accept_ratio)
+
+        if isnan(accept_ratio)
+            accept_ratio = 0
+        end
+
+        accept = rand(Bernoulli(accept_ratio))
+        if accept == 1
+            n = n_new
+            accept_count += 1
+            #println("accept")
+        else
+            #println("reject")
+        end
+
+        #println("beta")
+        #println(beta)
+        n_samp[i] = n
+    end
+
+    println(accept_count / nreps)
+
+    n_out = DataFrame([n_samp], [:col1])
+    CSV.write(filename_out, n_out)
+end
